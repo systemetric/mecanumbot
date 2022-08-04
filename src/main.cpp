@@ -1,143 +1,97 @@
 #include <Arduino.h>
+#include <PID_Beta6.h>
+#include <MotorWheel.h>
+#include <Omni4WD.h>
 
-/* Aaron here - I'm defining the front as the short edge that the arduino is closest to.
- *
- * A and C pins (left-hand motors) are defined by the two pairs of jumpers (each pair has a red wire and black wire) on the bottom board.
- * They link the arduino's digital pins to motor pins (near the screw terminals that the motor power wires come from) 
- *                                                    (they're confusingly labelled 6,7,4,5)
- * 
- * B and D pins (right-hand motors) are defined by the little 1x2 pin connectors that tie adjacent pins together on the top board.
- * They basically let you make a binary choice between two pre-defined arduino digital pins for each pin. 
- * (careful, these connectors are fragile. You can grab the inner and outer edges of one side with some tweasers.)
- * 
- * When fiddling with this, as always, avoid pins used for built-in purposes. 
- * 
- *    front
- * A ------ B
- * | ard    |
- * | uino   |
- * |        |   right
- * |    batt|
- * |     ery|
- * C -----  D
- * 
- */
-#define A_DIR 12    // A : front left
-#define A_PWM 11
-#define B_DIR  4    // B : front right
-#define B_PWM  5
-#define C_DIR  2    // C : back left
-#define C_PWM  3
-#define D_DIR  7    // D : back right
-#define D_PWM  6
 
-int dirPins[4] = {A_DIR, B_DIR, C_DIR, D_DIR};
-int pwmPins[4] = {A_PWM, B_PWM, C_PWM, D_PWM};
+#define WHEEL_COUNT 4
+
+#define A_DIR        2
+#define A_PWM        3
+#define A_ENCODER_A 12
+#define A_ENCODER_B 13
+
+#define B_DIR        4
+#define B_PWM        5
+#define B_ENCODER_A A0
+#define B_ENCODER_B A1
+
+#define C_DIR       11
+#define C_PWM       10
+#define C_ENCODER_A A4
+#define C_ENCODER_B A5
+
+#define D_DIR        8
+#define D_PWM        9
+#define D_ENCODER_A  6
+#define D_ENCODER_B  7
+
+
+irqISR(irq1, isr1);
+irqISR(irq2, isr2);
+irqISR(irq3, isr3);
+irqISR(irq4, isr4);
+MotorWheel wheelA(A_PWM, A_DIR, A_ENCODER_A, A_ENCODER_B, &irq1);
+MotorWheel wheelB(B_PWM, B_DIR, B_ENCODER_A, B_ENCODER_B, &irq2);
+MotorWheel wheelC(C_PWM, C_DIR, C_ENCODER_A, C_ENCODER_B, &irq3);
+MotorWheel wheelD(D_PWM, D_DIR, D_ENCODER_A, D_ENCODER_B, &irq4);
+
+MotorWheel* wheels[WHEEL_COUNT] = {&wheelA, &wheelB, &wheelC, &wheelD};
 
 
 void setup() {
   Serial.begin(9600);
-  digitalWrite(LED_BUILTIN, HIGH);
 
-  pinMode(A_DIR, OUTPUT);
-  pinMode(A_PWM, OUTPUT);
-  pinMode(B_DIR, OUTPUT);
-  pinMode(B_PWM, OUTPUT);
-  pinMode(C_DIR, OUTPUT);
-  pinMode(C_PWM, OUTPUT);
-  pinMode(D_DIR, OUTPUT);
-  pinMode(D_PWM, OUTPUT);
+  wheelA.setCirMM(188);
+  wheelB.setCirMM(188);
+  wheelC.setCirMM(188);
+  wheelD.setCirMM(188);
+
+  float p = 0.3;
+  float i = 0.1;
+  float d = 0.0;
+  int t = 100;
+
+  wheelA.PIDEnable(p, i, d, t);
+  wheelB.PIDEnable(p, i, d, t);
+  wheelC.PIDEnable(p, i, d, t);
+  wheelD.PIDEnable(p, i, d, t);
+
+  wheelA.setSpeedMMPS(30);
+  wheelB.setSpeedMMPS(-20);
+  wheelC.setSpeedMMPS(20);
+  wheelD.setSpeedMMPS(-20);
 }
 
-/// right-hand and left-hand motors go in opposite directions
-void setMotorDir(int dirPin, bool forwards) {
-  if (dirPin == A_DIR || dirPin == C_DIR) {
-    digitalWrite(dirPin, forwards);
-  }
-  else if (dirPin == B_DIR || dirPin == D_DIR) {
-    digitalWrite(dirPin, !forwards);
-  }
-  // else ??? that's not a motor dir pin
-}
-
-void stopDriving() {
-  digitalWrite(A_PWM, 0);
-  digitalWrite(B_PWM, 0);
-  digitalWrite(C_PWM, 0);
-  digitalWrite(D_PWM, 0);
-}
-
-void doMotorTest(int p, int t) {
-  for (int i = 0; i < sizeof(dirPins)/sizeof(dirPins[0]); i++) {
-    int dir = dirPins[i];
-    int pwm = pwmPins[i];
-    setMotorDir(dir, true);
-    analogWrite(pwm, p);
-    delay(t);
-    stopDriving();
-    delay(t/5);
-    setMotorDir(dir, false);
-    analogWrite(pwm, p);
-    delay(t);
-    stopDriving();
-    delay(t/5);
-  }
-}
-
-/// neg power for backwards, pos power for forwards
-void moveY(int power) {
-  if (power == 0) return;
-
-  bool forwards = power > 0;
-  setMotorDir(A_DIR, forwards);
-  setMotorDir(B_DIR, forwards);
-  setMotorDir(C_DIR, forwards);
-  setMotorDir(D_DIR, forwards);
-
-  power = abs(power);
-  analogWrite(A_PWM, power);
-  analogWrite(B_PWM, power);
-  analogWrite(C_PWM, power);
-  analogWrite(D_PWM, power);
-}
-
-/// neg power for left, pos power for right
-void moveX(int power) {
-  if (power == 0) return;
-
-  setMotorDir(A_DIR, power > 0);
-  setMotorDir(B_DIR, power < 0);
-  setMotorDir(C_DIR, power < 0);
-  setMotorDir(D_DIR, power > 0);
-
-  power = abs(power);
-  analogWrite(A_PWM, power);
-  analogWrite(B_PWM, power);
-  analogWrite(C_PWM, power);
-  analogWrite(D_PWM, power);
-}
-
-int p = 100;
-int t = 500;
+bool a = true;
+int i = 0;
+int nextTime = 0;
 
 void loop() {
-  moveY(p);
-  delay(t);
-  stopDriving();
-  delay(1000);
+  wheelA.PIDRegulate();
+  wheelB.PIDRegulate();
+  wheelC.PIDRegulate();
+  wheelD.PIDRegulate();
 
-  moveX(p);
-  delay(t);
-  stopDriving();
-  delay(1000);
+  if (millis() > nextTime) {
+    int target = a ? -600 : 600;
+    a = !a;
+    nextTime = millis() + 4000;
+    Serial.print(nextTime);
 
-  moveY(-p);
-  delay(t);
-  stopDriving();
-  delay(1000);
+    Serial.println();
+    Serial.println();
+    Serial.println(target);
+    Serial.println(target);
+    Serial.println(target);
+    Serial.println(target);
 
-  moveX(-p);
-  delay(t);
-  stopDriving();
-  delay(1000);
+
+    for (int j = 0; j < sizeof(wheels)/sizeof(wheels[0]); j++) {
+      Serial.print(j);
+      Serial.print("   ");
+      Serial.println((*wheels[j]).getSpeedRPM());
+      (*wheels[j]).setSpeedRPM(target);
+    }
+  }
 }
