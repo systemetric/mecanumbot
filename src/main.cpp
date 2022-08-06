@@ -4,8 +4,6 @@
 #include <Omni4WD.h>
 
 
-#define WHEEL_COUNT 4
-
 #define A_DIR        2
 #define A_PWM        3
 #define A_ENCODER_A 12
@@ -26,72 +24,70 @@
 #define D_ENCODER_A  6
 #define D_ENCODER_B  7
 
+#define BAUDRATE 9600
+#define WHEEL_CIRCUMFERENCE 188
+#define WHEELSPAN 225
 
+
+// interrupts
 irqISR(irq1, isr1);
 irqISR(irq2, isr2);
 irqISR(irq3, isr3);
 irqISR(irq4, isr4);
+// MotorWheel objects represent a motor with a wheel attached, so
+// wheelA.setSpeedMMPS(mmps) can use the circumference of the wheel (and gear ratio, etc.) to calculate the speed in rpm
 MotorWheel wheelA(A_PWM, A_DIR, A_ENCODER_A, A_ENCODER_B, &irq1);
 MotorWheel wheelB(B_PWM, B_DIR, B_ENCODER_A, B_ENCODER_B, &irq2);
 MotorWheel wheelC(C_PWM, C_DIR, C_ENCODER_A, C_ENCODER_B, &irq3);
 MotorWheel wheelD(D_PWM, D_DIR, D_ENCODER_A, D_ENCODER_B, &irq4);
 
-MotorWheel* wheels[WHEEL_COUNT] = {&wheelA, &wheelB, &wheelC, &wheelD};
+// object to represent the whole 4 wheel driving setup
+Omni4WD car(&wheelA, &wheelB, &wheelC, &wheelD, WHEELSPAN);
 
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(BAUDRATE);
 
-  wheelA.setCirMM(188);
-  wheelB.setCirMM(188);
-  wheelC.setCirMM(188);
-  wheelD.setCirMM(188);
+  // set wheel circumferences
+  wheelA.setCirMM(WHEEL_CIRCUMFERENCE);
+  wheelB.setCirMM(WHEEL_CIRCUMFERENCE);
+  wheelC.setCirMM(WHEEL_CIRCUMFERENCE);
+  wheelD.setCirMM(WHEEL_CIRCUMFERENCE);
 
-  float p = 0.3;
-  float i = 0.1;
-  float d = 0.0;
-  int t = 100;
-
-  wheelA.PIDEnable(p, i, d, t);
-  wheelB.PIDEnable(p, i, d, t);
-  wheelC.PIDEnable(p, i, d, t);
-  wheelD.PIDEnable(p, i, d, t);
-
-  wheelA.setSpeedMMPS(30);
-  wheelB.setSpeedMMPS(-20);
-  wheelC.setSpeedMMPS(20);
-  wheelD.setSpeedMMPS(-20);
+  // init the PID settings
+  const float p = 0.3;
+  const float i = 0.1;
+  const float d = 0.0;
+  const int t = 100;
+  car.PIDEnable(p, i, d, t);
 }
 
-bool a = true;
 int i = 0;
-int nextTime = 0;
+unsigned long nextTime = 0;
+unsigned short actionTime = 100;
+const unsigned short circumferenceMS = 10000;
+
+float rad = 0;
+float radPerChange = M_PI * 2 / (circumferenceMS / actionTime);
+int mmps = 40;
+
 
 void loop() {
-  wheelA.PIDRegulate();
-  wheelB.PIDRegulate();
-  wheelC.PIDRegulate();
-  wheelD.PIDRegulate();
+  car.PIDRegulate();    // do PID update every loop call to adjust motor speeds
 
   if (millis() > nextTime) {
-    int target = a ? -600 : 600;
-    a = !a;
-    nextTime = millis() + 4000;
+    i++;
+    nextTime = millis() + actionTime;
+    Serial.print("next time: ");
     Serial.print(nextTime);
 
-    Serial.println();
-    Serial.println();
-    Serial.println(target);
-    Serial.println(target);
-    Serial.println(target);
-    Serial.println(target);
-
-
-    for (int j = 0; j < sizeof(wheels)/sizeof(wheels[0]); j++) {
-      Serial.print(j);
-      Serial.print("   ");
-      Serial.println((*wheels[j]).getSpeedRPM());
-      (*wheels[j]).setSpeedRPM(target);
+    rad += radPerChange;
+    while (rad > M_PI * 2) {
+      rad -= M_PI * 2;
     }
+
+    Serial.print("    ");
+    Serial.println(rad);
+    car.setCarMove(mmps, rad);
   }
 }
