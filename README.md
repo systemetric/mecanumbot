@@ -22,6 +22,6 @@ I've opted for writing code for this myself rather than using their library, sin
 
 Code:
 - [Basic movement](src/main.cpp)
-    - code moves the robot in a square
+    - code moves the robot in a circle
     - comments cover the basics of wiring up the boards to control the motors
 
